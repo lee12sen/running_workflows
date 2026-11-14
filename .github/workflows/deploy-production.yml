@@ -1,0 +1,14 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: production
+      node-version: "20"
+    secrets:
+      deploy_token: ${{ secrets.PROD_DEPLOY_TOKEN }}

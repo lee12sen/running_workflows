@@ -1,0 +1,26 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: staging
+      node-version: "18"
+    secrets:
+      deploy_token: ${{ secrets.STAGING_DEPLOY_TOKEN }}
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: production
+      node-version: "20"
+    secrets:
+      deploy_token: ${{ secrets.PROD_DEPLOY_TOKEN }}

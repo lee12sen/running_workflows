@@ -1,0 +1,17 @@
+name: 'Setup Project'
+description: 'Setup Node.js & deps'
+
+inputs:
+  node-version:
+    required: false
+    default: '18'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v3
+      with:
+        node-version: ${{ inputs.node-version }}
+    
+    - run: npm ci
+      shell: bash

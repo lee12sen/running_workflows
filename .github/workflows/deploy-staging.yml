@@ -1,0 +1,14 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: staging
+      node-version: "18"
+    secrets:
+      deploy_token: ${{ secrets.STAGING_DEPLOY_TOKEN }}
