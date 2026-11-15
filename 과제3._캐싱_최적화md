@@ -1,0 +1,104 @@
+# 과제 3: 캐싱 최적화 리포트
+
+## 1. 과제 개요
+
+GitHub Actions에서 의존성 캐싱을 적용하고, 캐시를 적용하지 않은 워크플로우와 실행 시간을 비교했다. 캐시 적용 여부 외의 조건은 동일하게 유지하여 캐싱에 따른 효과를 측정했다.
+
+이번 과제는 기존 `running_workflows` 프로젝트가 아니라 [booksmap](https://github.com/lee12sen/booksmap) 저장소에서 진행했다. 기존 프로젝트는 실제 npm 의존성이 없어 `node_modules`가 생성되지 않았고 캐시 저장 및 복원이 이루어지지 않아 캐싱 효과를 측정하기 어려웠다. 반면 `booksmap`은 Next.js, React, TypeScript 및 ESLint 등의 실제 의존성을 포함하고 있어 캐싱 성능을 비교하기에 적합했다.
+
+## 2. 워크플로우 구성
+
+### 캐시 적용 워크플로우
+
+캐시 적용 워크플로우는 다음 순서로 실행된다.
+
+1. 저장소 checkout
+2. Node.js 20 설정
+3. `node_modules` 캐시 복원
+4. 캐시가 없을 때만 `npm ci` 실행
+5. lint, typecheck, build 실행
+
+```yaml
+- name: Cache node_modules
+  id: node-modules-cache
+  uses: actions/cache@v4
+  with:
+    path: node_modules
+    key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    restore-keys: |
+      node-modules-${{ runner.os }}-
+
+- name: Install dependencies
+  if: steps.node-modules-cache.outputs.cache-hit != 'true'
+  run: npm ci
+```
+
+### 캐시 미적용 워크플로우
+
+캐시 미적용 워크플로우는 매 실행마다 다음 명령을 수행한다.
+
+```yaml
+- name: Install dependencies
+  run: npm ci
+```
+
+이후 캐시 적용 워크플로우와 동일하게 `lint`, `typecheck`, `build`를 실행한다.
+
+## 3. 캐시 키 설계 근거
+
+캐시 키는 다음과 같이 설계했다.
+
+```yaml
+key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+```
+
+- `node-modules-`: 캐시 대상이 `node_modules`임을 나타내는 식별자
+- `${{ runner.os }}`: 운영체제별로 설치되는 의존성의 차이를 분리
+- `${{ hashFiles('package-lock.json') }}`: 의존성 목록과 버전이 변경되면 새로운 캐시를 생성
+
+`package-lock.json`의 해시를 사용하면 소스 코드만 변경된 경우에는 기존 의존성 캐시를 재사용할 수 있다. 반대로 패키지 추가, 삭제 또는 버전 변경으로 lock 파일이 변경되면 잘못된 의존성을 재사용하지 않고 새 캐시를 생성한다.
+
+또한 다음 `restore-keys`를 설정했다.
+
+```yaml
+restore-keys: |
+  node-modules-${{ runner.os }}-
+```
+
+정확한 키의 캐시가 없을 때 같은 운영체제의 이전 캐시를 부분적으로 복원하기 위한 설정이다. 이후 `npm ci`가 실행되므로 lock 파일 변경이 있는 경우에도 의존성을 최신 상태로 맞출 수 있다.
+
+## 4. 실행 결과
+
+| 구분 | 실행 차수 | 실행 시간 | 의미 |
+|---|---:|---:|---|
+| 캐시 적용 | 1회차 | 59초 | 캐시 생성 전 실행 |
+| 캐시 적용 | 2회차 | 21초 | Cache Hit 및 캐시 복원 |
+| 캐시 미적용 | 1회 | 53초 | 매번 `npm ci` 실행 |
+
+### 실행 기록
+
+- 캐시 적용 1회차: [Workflow run](https://github.com/lee12sen/booksmap/actions/runs/43714972584)
+- 캐시 적용 2회차: [Workflow run](https://github.com/lee12sen/booksmap/actions/runs/43715060105)
+- 캐시 미적용: [Workflow run](https://github.com/lee12sen/booksmap/actions/runs/43715060374)
+
+캐시 적용 1회차는 캐시가 아직 존재하지 않아 의존성 설치 후 캐시를 저장하는 과정이 포함되었다. 2회차에는 캐시가 복원되어 의존성 설치 단계를 건너뛰었으며, 로그에서 Cache Hit를 확인했다.
+
+## 5. 성능 분석
+
+캐시 적용 2회차를 캐시 미적용 실행과 비교했다.
+
+```text
+단축 시간 = 53초 - 21초 = 32초
+단축률 = (53초 - 21초) / 53초 × 100
+       = 약 60.4%
+```
+
+측정 결과 캐시 적용 후 실행 시간은 53초에서 21초로 감소했다. 따라서 초기 실행 대비 **약 60.4% 단축**되었으며, 과제 목표인 **50% 이상 단축**을 달성했다.
+
+캐시 적용 1회차는 59초로 캐시 미적용 실행보다 느렸지만, 이는 캐시가 없는 상태에서 의존성을 설치하고 캐시를 생성하는 초기 비용이 포함되었기 때문이다. 실제 반복 실행 환경에서는 2회차처럼 캐시가 적중하는 실행 결과를 기준으로 효과를 판단해야 한다.
+
+## 6. 결론
+
+`actions/cache@v4`를 사용해 `node_modules`를 캐싱하고, `package-lock.json` 해시와 운영체제를 조합한 키를 적용했다. 첫 실행에서는 캐시를 생성하고, 두 번째 실행에서는 캐시를 복원하여 `npm ci`를 생략했다.
+
+그 결과 캐시 미적용 시 53초였던 워크플로우가 캐시 적용 후 21초로 감소했으며, 약 60.4%의 실행 시간 단축을 확인했다. 이는 요구사항인 50% 이상 단축을 충족한다.
