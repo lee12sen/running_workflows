@@ -10,10 +10,14 @@ on:
         required: false
         type: string
         default: "18"
+      require-token:
+        required: false
+        type: boolean
+        default: true
 
     secrets:
       deploy_token:
-        required: true
+        required: false
 
     outputs:
       deploy_url:
@@ -22,11 +26,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     outputs:
       url: ${{ steps.deploy.outputs.url }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup project
         uses: ./.github/actions/setup-project
@@ -43,7 +48,7 @@ jobs:
           DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
           DEPLOY_TOKEN: ${{ secrets.deploy_token }}
         run: |
-          if [ -z "$DEPLOY_TOKEN" ]; then
+          if [ "${{ inputs.require-token }}" = "true" ] && [ -z "$DEPLOY_TOKEN" ]; then
             echo "DEPLOY_TOKEN is required" >&2
             exit 1
           fi

@@ -1,14 +1,49 @@
-name: Deploy
+name: Conditional Deploy
 
 on:
   push:
     branches:
       - main
       - develop
+  pull_request:
+    branches:
+      - main
+      - develop
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      application: ${{ steps.filter.outputs.application }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect application changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            application:
+              - 'frontend/**'
+              - 'src/**'
+              - 'app/**'
+              - 'backend/**'
+              - 'api/**'
+              - 'server/**'
+              - 'functions/**'
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - 'package.json'
+              - 'package-lock.json'
+
   deploy-staging:
-    if: github.ref == 'refs/heads/develop'
+    needs: changes
+    if: >
+      needs.changes.outputs.application == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop'
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       environment: staging
@@ -17,10 +52,25 @@ jobs:
       deploy_token: ${{ secrets.STAGING_DEPLOY_TOKEN }}
 
   deploy-production:
-    if: github.ref == 'refs/heads/main'
+    needs: changes
+    if: >
+      needs.changes.outputs.application == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       environment: production
       node-version: "20"
     secrets:
       deploy_token: ${{ secrets.PROD_DEPLOY_TOKEN }}
+
+  deploy-preview:
+    needs: changes
+    if: >
+      needs.changes.outputs.application == 'true' &&
+      github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: preview
+      node-version: "18"
+      require-token: false
